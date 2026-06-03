@@ -1,0 +1,26 @@
+name: Update manifest.json
+on:
+  push:
+    paths:
+      - '**.csv'
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate manifest.json
+        run: |
+          python3 -c "
+          import glob, json, os
+          files = sorted([os.path.basename(f) for f in glob.glob('broker_trades_*.csv')])
+          open('manifest.json','w').write(json.dumps(files, indent=2))
+          print(f'manifest.json: {len(files)} files')
+          "
+
+      - name: Commit manifest.json
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update manifest.json"
+          file_pattern: manifest.json
