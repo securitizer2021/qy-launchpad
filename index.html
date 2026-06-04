@@ -94,7 +94,7 @@ tr:hover td{background:#191f2e}
 <div class="hdr">
   <div class="hdr-left">
     <h1>QuantumYield — ES Futures Trading Performance Dashboard</h1>
-    <p id="hdrSub">2026-02-26 → 2026-06-04 · 61 trading days · 3,209 trades <span id="hdrVersion" style="opacity:0.35;font-size:10px;margin-left:6px"></span></p>
+    <p id="hdrSub"><span id="hdrSubText"></span><span id="hdrVersion" style="opacity:0.35;font-size:10px;margin-left:6px"></span></p>
   </div>
   <div class="hdr-right">
     <button id="refreshBtn" onclick="refreshData()" style="background:#1a2540;border:1px solid #3182ce;color:#63b3ed;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s" title="Fetch latest CSV data">🔄 Refresh</button>
@@ -471,7 +471,7 @@ function render() {
   const labels=data.map(r=>r.date);
   const risk=computeRisk(data);
 
-  document.getElementById('hdrSub').textContent = `${fr} → ${to} · ${data.length} ${agg} periods · ${(risk.totalTrades||0).toLocaleString()} trades`;
+  document.getElementById('hdrSubText').textContent = `${fr} → ${to} · ${data.length} ${agg} periods · ${(risk.totalTrades||0).toLocaleString()} trades · `;
 
   const activePage=document.querySelector('.tab.active')?.dataset.page||'overview';
 
