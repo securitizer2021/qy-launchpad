@@ -1,4 +1,4 @@
-<!-- v1.0.2 | 2026-06-04 -->
+<!-- v1.0.3 | 2026-06-04 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -94,7 +94,7 @@ tr:hover td{background:#191f2e}
 <div class="hdr">
   <div class="hdr-left">
     <h1>QuantumYield — ES Futures Trading Performance Dashboard</h1>
-    <p id="hdrSub">2026-02-26 → 2026-06-03 · 60 trading days · 3,163 trades</p>
+    <p id="hdrSub">2026-02-26 → 2026-06-03 · 60 trading days · 3,163 trades <span id="hdrVersion" style="opacity:0.35;font-size:10px;margin-left:6px"></span></p>
   </div>
   <div class="hdr-right">
     <button id="refreshBtn" onclick="refreshData()" style="background:#1a2540;border:1px solid #3182ce;color:#63b3ed;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s" title="Fetch latest CSV data">🔄 Refresh</button>
@@ -259,6 +259,7 @@ const TRADE_PNLS = [500.0, 125.0, -387.5, -1487.5, 250.0, 250.0, 237.5, 375.0, -
 const DIST_RAW = {"<-2k": 9, "-2k\u2192-1k": 32, "-1k\u2192-500": 129, "-500\u2192-200": 397, "-200\u2192-50": 633, "-50\u21920": 386, "0\u219250": 293, "50\u2192200": 579, "200\u2192500": 378, "500\u21921k": 169, "1k\u21922k": 85, ">2k": 35};
 const MIN_DATE = RAW_DAILY[0].date, MAX_DATE = RAW_DAILY[RAW_DAILY.length-1].date;
 const GRID = 'rgba(255,255,255,0.04)';
+const VERSION = 'v1.0.3';
 const TRADING_DAYS = 252;
 const CAPITAL = 26628.8; // ES capital_1x per contract
 
@@ -861,7 +862,7 @@ function renderGlossary() {
   `).join('');
 }
 
-window.addEventListener('load', () => { initMetrics(); renderGlossary(); render(); });
+window.addEventListener('load', () => { initMetrics(); renderGlossary(); render(); document.getElementById('hdrVersion').textContent = VERSION; });
 render();
 
 // ══════════════════════════════════════════════════════
