@@ -816,6 +816,11 @@ const GLOSSARY = [
     thresholds:[]
   },
   {
+    name:'VaR (99%)', badge:'Extreme Threshold', badgeColor:'bg-o', formula:'1st Percentile of Daily Returns',
+    body:`Tighter than VaR 95% — on any given day there is a <b>1% probability of losing more</b> than this amount. Only 1 in 100 trading days should exceed it. The gap between VaR 95% and VaR 99% tells you how fat the tail is: a large gap means the worst days are significantly worse than the typical bad day.`,
+    thresholds:[]
+  },
+  {
     name:'Recovery Factor', badge:'Resilience', badgeColor:'bg-g', formula:'Total PnL / |Max Drawdown|',
     body:`Total PnL divided by max drawdown. <b>"How many times over did the strategy earn back its worst loss?"</b> A recovery factor of 10× means the strategy earned 10× the max drawdown in total profit — a strong sign the drawdown was an isolated event, not a structural problem.`,
     thresholds:[{label:'< 2 Weak',c:'bg-r'},{label:'2–5 Good',c:'bg-b'},{label:'> 5 Excellent',c:'bg-g'}]
@@ -826,17 +831,11 @@ const GLOSSARY = [
     thresholds:[]
   },
   {
-    name:'Profit Factor', badge:'Edge Strength', badgeColor:'bg-b', formula:'Gross Wins / Gross Losses',
-    body:`Gross winning PnL divided by gross losing PnL. <b>Above 1.0 = makes more than it loses.</b> 1.55 means for every $1 lost, $1.55 was made. Solid but not exceptional — your edge comes more from consistency than from large individual wins. A high win rate with a low profit factor means wins and losses are similarly sized.`,
-    thresholds:[{label:'< 1 Losing',c:'bg-r'},{label:'1–1.5 Marginal',c:'bg-o'},{label:'1.5–2 Good',c:'bg-b'},{label:'> 2 Excellent',c:'bg-g'}]
-  },
-  {
     name:'How They Fit Together', badge:'Investor View', badgeColor:'bg-p', formula:'',
     body:`<b>Sharpe / Sortino / Calmar</b> → "Is the return worth the risk?"<br>
 <b>VaR / CVaR</b> → "What's the worst-case day?"<br>
 <b>Max Drawdown</b> → "What's the worst-case run?"<br>
 <b>Recovery Factor</b> → "How fast did it come back?"<br>
-<b>Profit Factor</b> → "Does daily gross edge hold?"<br><br>
 A strategy can have a great Sharpe but poor Recovery Factor (big drawdown, slow recovery). Look at all of them together — no single metric tells the full story.`,
     thresholds:[]
   }
