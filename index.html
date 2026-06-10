@@ -831,18 +831,13 @@ const GLOSSARY = [
     thresholds:[{label:'< 1 Losing',c:'bg-r'},{label:'1–1.5 Marginal',c:'bg-o'},{label:'1.5–2 Good',c:'bg-b'},{label:'> 2 Excellent',c:'bg-g'}]
   },
   {
-    name:'Expectancy / Trade', badge:'Per-Trade Edge', badgeColor:'bg-g', formula:'Total PnL / Total Trades',
-    body:`The average PnL per trade across all trades. <b>The most practical number</b> — it tells you what a single trade is worth in dollar terms on average. If this goes negative, the strategy is broken regardless of what everything else shows. Multiply by daily trade count to estimate expected daily PnL.`,
-    thresholds:[{label:'≤ $0 No Edge',c:'bg-r'},{label:'> $0 Edge Present',c:'bg-g'}]
-  },
-  {
     name:'How They Fit Together', badge:'Investor View', badgeColor:'bg-p', formula:'',
     body:`<b>Sharpe / Sortino / Calmar</b> → "Is the return worth the risk?"<br>
 <b>VaR / CVaR</b> → "What's the worst-case day?"<br>
 <b>Max Drawdown</b> → "What's the worst-case run?"<br>
 <b>Recovery Factor</b> → "How fast did it come back?"<br>
-<b>Profit Factor + Expectancy</b> → "Does the edge hold at the trade level?"<br><br>
-A strategy can have a great Sharpe but poor Recovery Factor (big drawdown, slow recovery). A strategy with great Expectancy but low Profit Factor is grinding small wins against similar-sized losses. Look at all of them together — no single metric tells the full story.`,
+<b>Profit Factor</b> → "Does daily gross edge hold?"<br><br>
+A strategy can have a great Sharpe but poor Recovery Factor (big drawdown, slow recovery). Look at all of them together — no single metric tells the full story.`,
     thresholds:[]
   }
 ];
