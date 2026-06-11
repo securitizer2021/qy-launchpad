@@ -599,6 +599,7 @@ function render() {
 
     // Rolling Sharpe & Sortino within the filtered date range
     const chartRoll = rollW > 0 ? rollW : 10;
+    const isFull = rollW === 0;
     const rollDates=[], rollSharpe=[], rollSortino=[];
     for(let i=chartRoll-1;i<data.length;i++) {
       const slice=data.slice(i-chartRoll+1,i+1).map(r=>r.pnl);
@@ -611,13 +612,13 @@ function render() {
       rollSortino.push(downside?+((mn*TRADING_DAYS)/downside).toFixed(3):null);
     }
     destroyChart('rollingVolChart');
-    const rollTitle = `Rolling ${chartRoll}-Day Sharpe & Sortino`;
+    const rollTitle = isFull ? `Rolling Sharpe & Sortino (Full Range)` : `Rolling ${chartRoll}-Day Sharpe & Sortino`;
     document.querySelector('#page-risk .section h3').textContent = rollTitle;
     newChart('rollingSharpeChart',{
       type:'line',
       data:{ labels:rollDates, datasets:[
-        { label:`Sharpe (${chartRoll}d)`,  data:rollSharpe,  borderColor:'#63b3ed', backgroundColor:'transparent', tension:.3, pointRadius:1, borderWidth:2 },
-        { label:`Sortino (${chartRoll}d)`, data:rollSortino, borderColor:'#48bb78', backgroundColor:'transparent', tension:.3, pointRadius:1, borderWidth:2 }
+        { label: isFull ? 'Sharpe' : `Sharpe (${chartRoll}d)`,  data:rollSharpe,  borderColor:'#63b3ed', backgroundColor:'transparent', tension:.3, pointRadius:1, borderWidth:2 },
+        { label: isFull ? 'Sortino' : `Sortino (${chartRoll}d)`, data:rollSortino, borderColor:'#48bb78', backgroundColor:'transparent', tension:.3, pointRadius:1, borderWidth:2 }
       ]},
       options:{ responsive:true, maintainAspectRatio:false,
         interaction:{mode:'index',intersect:false},
