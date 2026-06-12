@@ -541,21 +541,18 @@ function render() {
         : data.map(r=>r[m]??null);
       // scatter needs {x,y} objects; others use flat array + labels
       const chartData = isScatter ? vals.map((v,i)=>({x:labels[i], y:v})) : vals;
-      // Cumulative Return always renders as line (never bar)
-      const forceLineMetrics = new Set(['cum_pnl','drawdown']);
-      const effectiveCtype = forceLineMetrics.has(m) ? 'line' : ovCtype;
-      const useBar = effectiveCtype==='bar';
-      const isArea = effectiveCtype==='area';
+      const useBar = ovChartType==='bar';
+      const isArea = ovChartType==='area';
       const bgColors = useBar
         ? (m==='pnl'||m==='buy_pnl'||m==='sell_pnl'
             ? vals.map(v=>v>=0?'rgba(72,187,120,.75)':'rgba(252,129,129,.75)')
             : meta.color+'bb')
-        : isArea ? meta.color+'18' : meta.color+'99';
+        : isArea ? meta.color+'33' : meta.color+'99';
       newChart(canvasId, {
-        type: effectiveCtype,
+        type: ovCtype,
         data: { labels: isScatter ? undefined : labels,
           datasets:[{ label:meta.label, data:chartData, borderColor:meta.color,
-            backgroundColor:bgColors, fill:isArea,
+            backgroundColor:bgColors, fill:isArea ? 'origin' : false,
             tension:.3, pointRadius: isScatter ? 3 : (data.length<40?2:1),
             borderWidth:useBar?0:2 }] },
         options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
