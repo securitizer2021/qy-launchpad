@@ -892,7 +892,7 @@ async function refreshData() {
       .filter(n => /^broker_trades_\d{4}-\d{2}-\d{2}.*\.csv$/i.test(n))
       .sort();
 
-    if(!files.length) { status.textContent='⚠️ No broker_trades CSV files found in directory'; reset(); return; }
+    if(!files.length) { status.textContent='⚠️ No broker_trades CSV files found in directory'; return; }
     status.textContent = `Fetching ${files.length} files…`;
 
     // Fetch & parse each CSV
