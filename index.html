@@ -381,11 +381,12 @@ function filterData(fr, to) { return RAW_DAILY.filter(r=>r.date>=fr && r.date<=t
 function aggregate(data, agg) {
   if(agg==='daily') {
     const rows = data.map(r=>Object.assign({},r));
-    // rebase cum_pnl to start from 0 at the first row of the filtered window
-    const base = rows.length ? (rows[0].cum_pnl - rows[0].pnl) : 0;
+    const pnlBase = rows.length ? (rows[0].cum_pnl - rows[0].pnl) : 0;
+    const retBase = rows.length ? ((rows[0].cum_ret_pct||0) - (rows[0].return_pct||0)) : 0;
     let peak = -Infinity;
     rows.forEach(r => {
-      r.cum_pnl = +(r.cum_pnl - base).toFixed(2);
+      r.cum_pnl = +(r.cum_pnl - pnlBase).toFixed(2);
+      r.cum_ret_pct = +((r.cum_ret_pct||0) - retBase).toFixed(4);
       peak = Math.max(peak, r.cum_pnl);
       r.drawdown = +(r.cum_pnl - peak).toFixed(2);
       r.drawdown_pct = peak > 0 ? +((r.cum_pnl - peak) / peak * 100).toFixed(2) : 0;
@@ -399,19 +400,19 @@ function aggregate(data, agg) {
       const d=new Date(r.date); const day=d.getDay(); const diff=d.getDate()-day+(day===0?-6:1);
       d.setDate(diff); key=d.toISOString().slice(0,10);
     } else { key=r.date.slice(0,7); }
-    if(!groups[key]) groups[key]={date:key,pnl:0,trades:0,wins:0,losses:0,gross_profit:0,gross_loss:0,notional:0,buy_pnl:0,sell_pnl:0};
+    if(!groups[key]) groups[key]={date:key,pnl:0,trades:0,wins:0,losses:0,gross_profit:0,gross_loss:0,notional:0,buy_pnl:0,sell_pnl:0,return_pct:0};
     const g=groups[key];
-    ['pnl','trades','wins','losses','gross_profit','gross_loss','notional','buy_pnl','sell_pnl'].forEach(k=>g[k]+=r[k]||0);
+    ['pnl','trades','wins','losses','gross_profit','gross_loss','notional','buy_pnl','sell_pnl','return_pct'].forEach(k=>g[k]+=(r[k]||0));
   });
   const rows=Object.values(groups).sort((a,b)=>a.date.localeCompare(b.date));
-  let cum=0;
+  let cum=0, cumRet=0;
   rows.forEach(r=>{
     cum+=r.pnl; r.cum_pnl=cum;
+    cumRet+=r.return_pct; r.cum_ret_pct=+cumRet.toFixed(4);
     r.win_rate=r.trades?+(r.wins/r.trades*100).toFixed(1):0;
     r.avg_pnl=r.trades?+(r.pnl/r.trades).toFixed(2):0;
     r.profit_factor=r.gross_loss?+(r.gross_profit/r.gross_loss).toFixed(2):null;
   });
-  // recompute drawdown
   let peak=-Infinity;
   rows.forEach(r=>{ peak=Math.max(peak,r.cum_pnl); r.drawdown=+(r.cum_pnl-peak).toFixed(2); r.drawdown_pct=peak>0?+((r.cum_pnl-peak)/peak*100).toFixed(2):0; });
   return rows;
@@ -536,7 +537,7 @@ function render() {
       const meta = OV_META[m];
       const canvasId = 'ov_'+m;
       const vals = m==='cum_pnl'
-        ? data.map(r=>+(r.cum_pnl/CAPITAL*100).toFixed(2))
+        ? data.map(r=>+(r.cum_ret_pct||0).toFixed(2))
         : data.map(r=>r[m]??null);
       // scatter needs {x,y} objects; others use flat array + labels
       const chartData = isScatter ? vals.map((v,i)=>({x:labels[i], y:v})) : vals;
@@ -904,26 +905,55 @@ async function refreshData() {
       const hdrs = lines[0].split(',');
       const idx = k => hdrs.indexOf(k);
       const iPnl=idx('pnl_calc'), iSide=idx('open_side'), iNot=idx('notional');
+      const iOpenTs=idx('open_ts_utc'), iCloseTs=idx('close_ts_utc');
+      const iOpenPx=idx('open_exec_px'), iClosePx=idx('close_exec_px'), iQty=idx('qty');
       for(let i=1;i<lines.length;i++) {
         const cols = lines[i].split(',');
         if(cols.length < 3) continue;
-        allRows.push({ date, pnl:parseFloat(cols[iPnl])||0, side:cols[iSide]?.trim(), notional:parseFloat(cols[iNot])||0 });
+        allRows.push({ date, pnl:parseFloat(cols[iPnl])||0, side:cols[iSide]?.trim(), notional:parseFloat(cols[iNot])||0,
+          open_ts:cols[iOpenTs]?.trim(), close_ts:cols[iCloseTs]?.trim(),
+          open_px:parseFloat(cols[iOpenPx])||0, close_px:parseFloat(cols[iClosePx])||0,
+          qty:parseFloat(cols[iQty])||1 });
       }
     }
 
     // Aggregate & recompute
     const byDate = {};
     allRows.forEach(r => {
-      if(!byDate[r.date]) byDate[r.date]={date:r.date,pnl:0,trades:0,wins:0,losses:0,gp:0,gl:0,notional:0,buy_pnl:0,sell_pnl:0};
+      if(!byDate[r.date]) byDate[r.date]={date:r.date,pnl:0,trades:0,wins:0,losses:0,gp:0,gl:0,notional:0,buy_pnl:0,sell_pnl:0,_rows:[]};
       const d=byDate[r.date]; d.pnl+=r.pnl; d.trades++;
       if(r.pnl>0){d.wins++;d.gp+=r.pnl;} else if(r.pnl<0){d.losses++;d.gl+=Math.abs(r.pnl);}
       d.notional+=r.notional;
       if(r.side==='BUY') d.buy_pnl+=r.pnl; else if(r.side==='SELL') d.sell_pnl+=r.pnl;
+      d._rows.push(r);
     });
     const newDaily = Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
-    let cum=0, peak=-Infinity;
+    // Compute base_capital and return_pct per day using the formula:
+    // base_capital = |max_net_pos| × 50 × avg_sp_price / 15
+    newDaily.forEach(r => {
+      const rows = r._rows;
+      // max net position from open/close timestamps
+      const events = [];
+      rows.forEach(t => {
+        const sign = t.side==='BUY' ? 1 : -1;
+        if(t.open_ts)  events.push([t.open_ts,  sign * t.qty]);
+        if(t.close_ts) events.push([t.close_ts, -sign * t.qty]);
+      });
+      events.sort((a,b)=>a[0]<b[0]?-1:1);
+      let pos=0, maxPos=0;
+      events.forEach(([,d])=>{ pos+=d; maxPos=Math.max(maxPos,Math.abs(pos)); });
+      if(!maxPos) maxPos=1;
+      const prices = rows.flatMap(t=>[t.open_px,t.close_px].filter(p=>p>0));
+      const avgSP = prices.length ? prices.reduce((a,b)=>a+b,0)/prices.length : 0;
+      r.max_net_pos = maxPos;
+      r.base_capital = avgSP ? +(maxPos*50*avgSP/15).toFixed(2) : 50000;
+      r.return_pct   = +(r.pnl/r.base_capital*100).toFixed(6);
+      delete r._rows;
+    });
+    let cum=0, cumRet=0, peak=-Infinity;
     newDaily.forEach(r => {
       cum+=r.pnl; r.cum_pnl=+cum.toFixed(2);
+      cumRet+=r.return_pct; r.cum_ret_pct=+cumRet.toFixed(4);
       r.win_rate=r.trades?+(r.wins/r.trades*100).toFixed(2):0;
       r.avg_pnl=r.trades?+(r.pnl/r.trades).toFixed(2):0;
       r.profit_factor=r.gl?+(r.gp/r.gl).toFixed(3):null;
