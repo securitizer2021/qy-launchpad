@@ -450,21 +450,26 @@ function computeRisk(data) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// ── LIVE FOLDER AUTO-SCAN ──
+// ── LIVE FOLDER AUTO-SCAN (manifest.json based) ──
 // Replaces the manual `python3 rebuild_dashboard.py` step: every time
-// this page is opened, refreshed, or its periodic poll fires, it asks
-// server.py (which serves this same folder) for the current list of
-// broker_trades_YYYY-MM-DD..._dailyPnL.csv files via its /_files
-// endpoint, fetches each one fresh, and recomputes RAW_DAILY / DIST_RAW
-// from scratch — no cached results are kept between scans, no folder
-// picker, no button. Requires the page to be opened via
-// `python3 server.py` (http://localhost:8080/index.html) rather than
-// double-clicked as a file:// page — fetch() can't list/read sibling
-// files without a server behind it. If the server isn't reachable, the
-// dashboard just keeps showing the last saved snapshot.
+// this page is opened, refreshed, or its periodic poll fires, it fetches
+// manifest.json (a plain static file listing the current
+// broker_trades_YYYY-MM-DD..._dailyPnL.csv filenames in this folder),
+// then fetches each listed CSV and recomputes RAW_DAILY / DIST_RAW from
+// scratch — no cached results are kept between scans, no folder picker,
+// no button, and no custom server required: any static host works
+// (Cloudflare Pages, S3, nginx, GitHub Pages, etc.) as long as the page
+// is loaded over http(s) rather than double-clicked as a file:// page
+// (plain fetch() is blocked by CORS on file://).
+//
+// Daily workflow: run `python3 update_manifest.py` after dropping a new
+// CSV into this folder (regenerates manifest.json), then upload
+// manifest.json + the new CSV to the server/host. If the tab is left
+// open, it'll pick up the change on the next 60s poll or tab refocus;
+// otherwise just refresh the page.
 // ══════════════════════════════════════════════════════════════════
 const CSV_RE = /^broker_trades_(\d{4}-\d{2}-\d{2}).*\.csv$/i;
-const FILES_ENDPOINT = '_files';
+const FILES_ENDPOINT = 'manifest.json';
 
 function splitCSVLine(line) {
   const out = []; let cur = ''; let inQ = false;
@@ -632,7 +637,7 @@ async function autoScan(opts) {
   } catch (err) {
     console.error('Auto-scan failed:', err);
     if (!opts.silent) {
-      setDataStatus('⚠️ Can\'t reach server.py — showing saved snapshot (run `python3 server.py` and open via http://localhost:8080/)', '#fc8181');
+      setDataStatus('⚠️ Can\'t reach manifest.json — showing saved snapshot (run `python3 update_manifest.py` and serve this folder over http(s), not file://)', '#fc8181');
     }
     return false;
   } finally {
