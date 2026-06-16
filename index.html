@@ -98,7 +98,6 @@ tr:hover td{background:#191f2e}
   </div>
   <div class="hdr-right">
     <span id="dataSrcStatus" style="font-size:11px;color:#718096;margin-right:4px;white-space:nowrap">📁 Using saved snapshot</span>
-    <button id="connectFolderBtn" class="tab" style="white-space:nowrap">Connect Folder</button>
     <button class="tab active" data-page="overview">Overview</button>
     <button class="tab" data-page="risk">Risk Metrics</button>
     <button class="tab" data-page="charts">Charts</button>
@@ -454,41 +453,19 @@ function computeRisk(data) {
 // ══════════════════════════════════════════════════════════════════
 // ── LIVE FOLDER AUTO-SCAN ──
 // Replaces the manual `python3 rebuild_dashboard.py` step: every time
-// this page is opened or refreshed, it re-reads every
-// broker_trades_YYYY-MM-DD..._dailyPnL.csv file in the connected folder
-// and recomputes RAW_DAILY / DIST_RAW from scratch (no cached results
-// are kept between loads — always a fresh scan).
+// this page is opened, refreshed, or its periodic poll fires, it asks
+// server.py (which serves this same folder) for the current list of
+// broker_trades_YYYY-MM-DD..._dailyPnL.csv files via its /_files
+// endpoint, fetches each one fresh, and recomputes RAW_DAILY / DIST_RAW
+// from scratch — no cached results are kept between scans, no folder
+// picker, no button. Requires the page to be opened via
+// `python3 server.py` (http://localhost:8080/index.html) rather than
+// double-clicked as a file:// page — fetch() can't list/read sibling
+// files without a server behind it. If the server isn't reachable, the
+// dashboard just keeps showing the last saved snapshot.
 // ══════════════════════════════════════════════════════════════════
 const CSV_RE = /^broker_trades_(\d{4}-\d{2}-\d{2}).*\.csv$/i;
-const IDB_NAME = 'qy_dashboard', IDB_STORE = 'handles', IDB_KEY = 'reportsDir';
-let liveDirHandle = null;
-
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function idbGet(key) {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    const r = tx.objectStore(IDB_STORE).get(key);
-    r.onsuccess = () => resolve(r.result || null);
-    r.onerror = () => reject(r.error);
-  });
-}
-async function idbSet(key, val) {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(val, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+const FILES_ENDPOINT = '_files';
 
 function splitCSVLine(line) {
   const out = []; let cur = ''; let inQ = false;
@@ -538,13 +515,12 @@ function bucketFor(p) {
 }
 
 // Mirrors rebuild_dashboard.py's aggregation exactly, but runs entirely
-// client-side against File objects pulled from the connected folder.
+// client-side against CSV text fetched from this same folder.
 async function buildDashboardData(fileEntries) {
   const byDate = new Map();
   const distRaw = {}; DIST_BUCKETS.forEach(b => distRaw[b] = 0);
 
-  for (const { date, file } of fileEntries) {
-    const text = await file.text();
+  for (const { date, text } of fileEntries) {
     const rows = parseCSV(text);
     if (!byDate.has(date)) byDate.set(date, { pnl:0, trades:0, wins:0, losses:0, gp:0, gl:0, notional:0, buy_pnl:0, sell_pnl:0 });
     const d = byDate.get(date);
@@ -611,42 +587,55 @@ function refreshDerived(opts) {
   }
 }
 
+async function fetchFileList() {
+  const res = await fetch(FILES_ENDPOINT, { cache: 'no-store' });
+  if (!res.ok) throw new Error('file list request failed: ' + res.status);
+  return await res.json();
+}
+
 let scanInFlight = false;
-async function loadFromHandle(handle, opts) {
+let everLoaded = false;
+async function autoScan(opts) {
   opts = opts || {};
   if (scanInFlight) return false; // skip overlapping scans (e.g. poll firing mid-scan)
   scanInFlight = true;
   try {
-    const matches = [];
-    for await (const [name, h] of handle.entries()) {
-      if (h.kind === 'file') {
-        const m = name.match(CSV_RE);
-        if (m) matches.push({ date: m[1], h });
-      }
-    }
+    const names = await fetchFileList();
+    const matches = names
+      .map(name => ({ name, m: name.match(CSV_RE) }))
+      .filter(x => x.m)
+      .map(x => ({ date: x.m[1], name: x.name }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     if (!matches.length) {
-      setDataStatus('📁 Folder connected — no broker_trades CSVs found there yet', '#f6ad55');
+      setDataStatus('📁 Connected — no broker_trades CSVs found in this folder yet', '#f6ad55');
       return false;
     }
-    matches.sort((a,b) => a.date.localeCompare(b.date));
+
     const fileEntries = [];
-    for (const m of matches) fileEntries.push({ date: m.date, file: await m.h.getFile() });
+    for (const m of matches) {
+      const res = await fetch(m.name, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`fetch failed for ${m.name}: ${res.status}`);
+      fileEntries.push({ date: m.date, text: await res.text() });
+    }
 
     const { rows, distRaw } = await buildDashboardData(fileEntries);
-    const changed = rows.length !== RAW_DAILY.length || JSON.stringify(rows[rows.length-1]) !== JSON.stringify(RAW_DAILY[RAW_DAILY.length-1]);
+    const changed = !everLoaded || rows.length !== RAW_DAILY.length || JSON.stringify(rows[rows.length-1]) !== JSON.stringify(RAW_DAILY[RAW_DAILY.length-1]);
     RAW_DAILY = rows;
     DIST_RAW = distRaw;
-    refreshDerived({ resetRange: !opts.poll });
+    refreshDerived({ resetRange: !everLoaded });
     const stamp = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    const badge = opts.poll ? (changed ? ' (new data)' : '') : '';
+    const badge = (everLoaded && changed) ? ' (new data)' : '';
     setDataStatus(`🟢 Live · ${matches.length} files scanned · ${stamp}${badge}`, '#68d391');
-    document.getElementById('connectFolderBtn').textContent = 'Rescan';
-    if (!opts.poll || changed) render();
+    if (!everLoaded || changed) render();
+    everLoaded = true;
     startPolling();
     return true;
   } catch (err) {
-    console.error('Folder scan failed:', err);
-    if (!opts.silent) setDataStatus('⚠️ Scan failed — showing saved snapshot', '#fc8181');
+    console.error('Auto-scan failed:', err);
+    if (!opts.silent) {
+      setDataStatus('⚠️ Can\'t reach server.py — showing saved snapshot (run `python3 server.py` and open via http://localhost:8080/)', '#fc8181');
+    }
     return false;
   } finally {
     scanInFlight = false;
@@ -661,61 +650,15 @@ let pollTimer = null;
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(() => {
-    if (liveDirHandle && document.visibilityState === 'visible') {
-      loadFromHandle(liveDirHandle, { silent: true, poll: true });
-    }
+    if (document.visibilityState === 'visible') autoScan({ silent: true });
   }, POLL_MS);
 }
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && liveDirHandle) {
-    loadFromHandle(liveDirHandle, { silent: true, poll: true });
-  }
+  if (document.visibilityState === 'visible') autoScan({ silent: true });
 });
-
-async function connectFolder() {
-  if (!('showDirectoryPicker' in window)) {
-    alert('Live folder auto-scan needs Chrome or Edge. This browser will keep showing the last saved snapshot (rebuild it with rebuild_dashboard.py if needed).');
-    return;
-  }
-  // If we already have a handle but permission lapsed, try a quiet re-prompt first.
-  if (liveDirHandle) {
-    try {
-      const perm = await liveDirHandle.requestPermission({ mode: 'read' });
-      if (perm === 'granted') { await loadFromHandle(liveDirHandle); return; }
-    } catch (e) { /* fall through to full picker */ }
-  }
-  try {
-    const handle = await window.showDirectoryPicker({ id: 'qy-reports', mode: 'read' });
-    liveDirHandle = handle;
-    await idbSet(IDB_KEY, handle);
-    await loadFromHandle(handle);
-  } catch (err) {
-    // user cancelled the picker — leave status as-is
-  }
-}
-
-async function tryAutoReconnect() {
-  if (!('showDirectoryPicker' in window)) return; // unsupported browser: keep saved snapshot silently
-  try {
-    const handle = await idbGet(IDB_KEY);
-    if (!handle) return; // never connected before — user hasn't clicked "Connect Folder" yet
-    liveDirHandle = handle;
-    const perm = await handle.queryPermission({ mode: 'read' });
-    if (perm === 'granted') {
-      await loadFromHandle(handle, { silent: true });
-    } else {
-      setDataStatus('📁 Click "Reconnect Folder" to resume live scanning', '#718096');
-      document.getElementById('connectFolderBtn').textContent = 'Reconnect Folder';
-    }
-  } catch (err) {
-    console.error('Auto-reconnect failed:', err);
-  }
-}
-
-document.getElementById('connectFolderBtn').addEventListener('click', connectFolder);
 
 function fmt$(v){ return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
 function fmt2(v){ return isNaN(v)||v===null?'—':v.toFixed(2); }
@@ -1125,7 +1068,7 @@ function renderGlossary() {
   `).join('');
 }
 
-window.addEventListener('load', () => { initMetrics(); renderGlossary(); render(); document.getElementById('hdrVersion').textContent = VERSION; tryAutoReconnect(); });
+window.addEventListener('load', () => { initMetrics(); renderGlossary(); render(); document.getElementById('hdrVersion').textContent = VERSION; autoScan({ silent: true }); });
 render();
 
 // ══════════════════════════════════════════════════════
