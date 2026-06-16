@@ -97,7 +97,6 @@ tr:hover td{background:#191f2e}
     <p id="hdrSub"><span id="hdrSubText"></span><span id="hdrVersion" style="opacity:0.35;font-size:10px;margin-left:6px"></span></p>
   </div>
   <div class="hdr-right">
-    <span id="dataSrcStatus" style="font-size:11px;color:#718096;margin-right:4px;white-space:nowrap">📁 Using saved snapshot</span>
     <button class="tab active" data-page="overview">Overview</button>
     <button class="tab" data-page="risk">Risk Metrics</button>
     <button class="tab" data-page="charts">Charts</button>
@@ -565,9 +564,8 @@ async function buildDashboardData(fileEntries) {
 }
 
 function setDataStatus(text, color) {
-  const el = document.getElementById('dataSrcStatus');
-  el.textContent = text;
-  el.style.color = color || '#718096';
+  // No visible status indicator in the UI; scan results just go to console.
+  console.log('[dashboard]', text);
 }
 function refreshDerived(opts) {
   opts = opts || {};
