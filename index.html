@@ -122,6 +122,7 @@ tr:hover td{background:#191f2e}
       <button class="qb" data-r="apr">Apr</button>
       <button class="qb" data-r="may">May</button>
         <button class="qb" data-r="jun">Jun</button>
+        <button class="qb" data-r="jul">Jul</button>
     </div>
   </div>
   <div>
@@ -302,7 +303,8 @@ document.getElementById('quickBtns').addEventListener('click', e => {
   else if(r==='mar'){ fr='2026-03-01'; to='2026-03-31'; }
   else if(r==='apr'){ fr='2026-04-01'; to='2026-04-30'; }
   else if(r==='may'){ fr='2026-05-01'; to='2026-05-31'; }
-  else if(r==='jun'){ fr='2026-06-01'; to=MAX_DATE; }
+  else if(r==='jun'){ fr='2026-06-01'; to='2026-06-30'; }
+  else if(r==='jul'){ fr='2026-07-01'; to=MAX_DATE; }
   document.getElementById('dFrom').value=fr; document.getElementById('dTo').value=to;
   render();
 });
