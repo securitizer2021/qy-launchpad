@@ -459,7 +459,11 @@ function computeRisk(data, startingEquity) {
   const gl=data.reduce((a,r)=>a+r.gross_loss,0);
   const pf=gl?gp/gl:0;
   const recovery=maxDD?cum[cum.length-1]/Math.abs(maxDD):0;
-  return {sharpe,sortino,calmar,omega,maxDD,maxDD_pct,var95,var99,cvar95,annRet,annVol,pf,recovery,winDays,totalTrades,totalWins,gp,gl,mean};
+  const res={sharpe,sortino,calmar,omega,maxDD,maxDD_pct,var95,var99,cvar95,annRet,annVol,pf,recovery,winDays,totalTrades,totalWins,gp,gl,mean};
+  // With <2 periods, distribution-based stats are statistically undefined —
+  // blank them (renders as em-dash) instead of showing extrapolated nonsense.
+  if(n<2) ['sharpe','sortino','calmar','omega','var95','var99','cvar95','annRet','annVol','recovery'].forEach(k=>res[k]=undefined);
+  return res;
 }
 
 // ══════════════════════════════════════════════════════════════════
