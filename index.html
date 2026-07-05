@@ -423,9 +423,9 @@ function aggregate(data, agg, startingEquity) {
 function computeRisk(data, startingEquity) {
   startingEquity = startingEquity || CAPITAL;
   const returns=data.map(r=>r.pnl);
-  const n=returns.length; if(n<2) return {};
+  const n=returns.length; if(!n) return {};
   const mean=returns.reduce((a,b)=>a+b,0)/n;
-  const variance=returns.reduce((a,b)=>a+(b-mean)**2,0)/(n-1);
+  const variance=n>1?returns.reduce((a,b)=>a+(b-mean)**2,0)/(n-1):0;
   const std=Math.sqrt(variance);
   const annRet=mean*TRADING_DAYS;
   const annVol=std*Math.sqrt(TRADING_DAYS);
