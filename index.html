@@ -262,7 +262,7 @@ let RAW_DAILY = FALLBACK_RAW_DAILY;
 let DIST_RAW = FALLBACK_DIST_RAW;
 let MIN_DATE = RAW_DAILY[0].date, MAX_DATE = RAW_DAILY[RAW_DAILY.length-1].date;
 const GRID = 'rgba(255,255,255,0.04)';
-const VERSION = 'v1.0.23';
+const VERSION = 'v1.0.24';
 const TRADING_DAYS = 252;
 const CAPITAL = 50000; // ES strategy capital base ($50k per contract allocation)
 
@@ -414,13 +414,16 @@ function aggregate(data, agg, startingEquity) {
     });
     return rows;
   }
-  const groups={};
-  data.forEach(r => {
-    let key;
+  const aggKey = r => {
     if(agg==='weekly') {
       const d=new Date(r.date); const day=d.getDay(); const diff=d.getDate()-day+(day===0?-6:1);
-      d.setDate(diff); key=d.toISOString().slice(0,10);
-    } else { key=r.date.slice(0,7); }
+      d.setDate(diff); return d.toISOString().slice(0,10);
+    }
+    return r.date.slice(0,7);
+  };
+  const groups={};
+  data.forEach(r => {
+    const key=aggKey(r);
     if(!groups[key]) groups[key]={date:key,pnl:0,trades:0,wins:0,losses:0,gross_profit:0,gross_loss:0,notional:0,buy_pnl:0,sell_pnl:0,return_pct:0};
     const g=groups[key];
     ['pnl','trades','wins','losses','gross_profit','gross_loss','notional','buy_pnl','sell_pnl','return_pct'].forEach(k=>g[k]+=(r[k]||0));
@@ -434,12 +437,22 @@ function aggregate(data, agg, startingEquity) {
     r.avg_pnl=r.trades?+(r.pnl/r.trades).toFixed(2):0;
     r.profit_factor=r.gross_loss?+(r.gross_profit/r.gross_loss).toFixed(2):null;
   });
-  let peak=-Infinity;
-  rows.forEach(r=>{ peak=Math.max(peak,r.cum_pnl); r.drawdown=+(r.cum_pnl-peak).toFixed(2); r.drawdown_pct=+((r.cum_pnl-peak)/startingEquity*100).toFixed(2); });
+  // Weekly/monthly drawdown used to be computed from period-END cumulative
+  // PnL only, so a period that dipped hard intra-period but closed at a new
+  // high reported DD = 0 (e.g. July 2026 on monthly aggregation). Each
+  // aggregate row now reports the worst DAILY drawdown (vs the running peak
+  // since range start) that occurred inside that period.
+  const ddByKey={};
+  let dCum=0, dPeak=-Infinity;
+  data.forEach(r=>{ dCum+=r.pnl; dPeak=Math.max(dPeak,dCum); const dd=dCum-dPeak; const k=aggKey(r); if(!(k in ddByKey) || dd<ddByKey[k]) ddByKey[k]=dd; });
+  rows.forEach(r=>{ const dd=ddByKey[r.date]||0; r.drawdown=+dd.toFixed(2); r.drawdown_pct=+(dd/startingEquity*100).toFixed(2); });
   return rows;
 }
 
-function computeRisk(data, startingEquity) {
+function computeRisk(data, startingEquity, periodAgg) {
+  // periodAgg: true when `data` is weekly/monthly-aggregated rows — max DD
+  // then uses each row's intra-period daily drawdown (set by aggregate())
+  // instead of period-end cums, which would hide intra-period dips.
   startingEquity = startingEquity || CAPITAL;
   const returns=data.map(r=>r.pnl);
   const n=returns.length; if(!n) return {};
@@ -455,6 +468,7 @@ function computeRisk(data, startingEquity) {
   const cum=data.map(r=>r.cum_pnl);
   let pk=-Infinity, maxDD=0;
   cum.forEach(c=>{ pk=Math.max(pk,c); maxDD=Math.min(maxDD,c-pk); });
+  if(periodAgg) maxDD=Math.min(maxDD, ...data.map(r=>r.drawdown??0), 0);
   const maxDD_pct = startingEquity ? +(maxDD/startingEquity*100).toFixed(2) : 0;
   const calmar=maxDD?annRet/Math.abs(maxDD):0;
   const sorted=[...returns].sort((a,b)=>a-b);
@@ -724,7 +738,7 @@ function render() {
   // Risk & trade statistics are computed on the dashboard basis (migration
   // sessions excluded); PnL / cumulative-return series above remain all-sessions.
   const dataRisk=aggregate(riskBasis(filtered), agg, startingEquity);
-  const risk=computeRisk(dataRisk, startingEquity);
+  const risk=computeRisk(dataRisk, startingEquity, agg!=='daily');
 
   document.getElementById('hdrSubText').textContent = `${fr} → ${to} · ${data.length} ${agg} periods · ${(risk.totalTrades||0).toLocaleString()} trades · `;
 
@@ -880,7 +894,7 @@ function render() {
     const riskStartingEquity = CAPITAL + riskPnlBase;
 
     // Recompute risk metrics on the sliced data
-    const risk = computeRisk(riskData, riskStartingEquity);
+    const risk = computeRisk(riskData, riskStartingEquity, agg!=='daily');
 
     const totalPnl=riskData.reduce((a,r)=>a+r.pnl,0);
     const riskOn = r => {
@@ -956,10 +970,11 @@ function render() {
     const months={};
     riskData.forEach(r=>{
       const m=r.date.slice(0,7);
-      if(!months[m]) months[m]={pnl:0,trades:0,wins:0,returns:[],gp:0,gl:0,cumPnls:[]};
+      if(!months[m]) months[m]={pnl:0,trades:0,wins:0,returns:[],gp:0,gl:0,cumPnls:[],minDD:0};
       months[m].pnl+=r.pnl; months[m].trades+=r.trades; months[m].wins+=r.wins;
       months[m].returns.push(r.pnl); months[m].gp+=r.gross_profit; months[m].gl+=r.gross_loss;
       months[m].cumPnls.push(r.cum_pnl);
+      months[m].minDD=Math.min(months[m].minDD, r.drawdown??0);
     });
     const tbody = document.querySelector('#riskTable');
     // clear old rows
@@ -973,9 +988,12 @@ function render() {
       const so=ds?+(mn*TRADING_DAYS/ds).toFixed(2):0;
       const wr=v.trades?+(v.wins/v.trades*100).toFixed(1):0;
       const pf=v.gl?+(v.gp/v.gl).toFixed(2):0;
-      // intra-month max drawdown from cum_pnl series
+      // intra-month max drawdown from cum_pnl series; under weekly/monthly
+      // aggregation the period-end cums hide intra-period dips, so fall back
+      // to the rows' intra-period daily drawdowns (set by aggregate()).
       let pk=-Infinity, mdd=0;
       v.cumPnls.forEach(c=>{ pk=Math.max(pk,c); mdd=Math.min(mdd,c-pk); });
+      if(agg!=='daily') mdd=Math.min(mdd, v.minDD);
       const tr=tbody.insertRow(-1);
       const cls=v.pnl>=0?'g':'r';
       tr.innerHTML=`<td>${m}</td><td class="${cls}">${fmt$(v.pnl)}</td><td class="${sh>=0?'g':'r'}">${sh}</td><td class="${so>=0?'g':'r'}">${so}</td><td class="r">${fmt$(mdd)}</td><td>${v.trades}</td>`;
