@@ -519,8 +519,10 @@ function computeRisk(data, startingEquity, periodAgg) {
   // Distribution-based stats need a minimum sample to mean anything — with a
   // handful of days, annualising ×252 produces absurd values (e.g. Sharpe 41
   // from two positive days). Blank them (renders as em-dash) below 5 periods.
+  // annRet is exempt: a simple ×252 extrapolation of mean daily PnL is
+  // defensible on any sample (card already says "Extrapolated 252d").
   const MIN_RISK_N = 5;
-  if(n<MIN_RISK_N) ['sharpe','sortino','calmar','omega','var95','var99','cvar95','annRet','annVol','recovery'].forEach(k=>res[k]=undefined);
+  if(n<MIN_RISK_N) ['sharpe','sortino','calmar','omega','var95','var99','cvar95','annVol','recovery'].forEach(k=>res[k]=undefined);
   return res;
 }
 
