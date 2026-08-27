@@ -1,4 +1,4 @@
-<!-- v1.1.0 | 2026-08-27 | automatic cache refresh -->
+<!-- v1.1.1 | 2026-08-27 | daily-basis risk metrics -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -257,7 +257,7 @@ let RAW_DAILY = FALLBACK_RAW_DAILY;
 let DIST_RAW = FALLBACK_DIST_RAW;
 let MIN_DATE = RAW_DAILY[0].date, MAX_DATE = RAW_DAILY[RAW_DAILY.length-1].date;
 const GRID = 'rgba(255,255,255,0.04)';
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.1';
 const TRADING_DAYS = 252;
 const CAPITAL = 50000; // strategy capital base ($50k per contract allocation)
 
@@ -807,10 +807,12 @@ function render() {
   const startingEquity = CAPITAL + pnlBase;
   const data=aggregate(filtered, agg, startingEquity);
   const labels=data.map(r=>r.date);
-  // Risk & trade statistics are computed on the dashboard basis (migration
-  // sessions excluded); PnL / cumulative-return series above remain all-sessions.
-  const dataRisk=aggregate(riskBasis(filtered), agg, startingEquity);
-  const risk=computeRisk(dataRisk, startingEquity, agg!=='daily');
+  // Risk & trade statistics always use DAILY observations on the dashboard
+  // basis (migration sessions excluded). Chart/table aggregation is only a
+  // presentation choice; it must not collapse a month into one observation
+  // and blank every risk metric via the minimum-sample guard.
+  const dataRisk=aggregate(riskBasis(filtered), 'daily', startingEquity);
+  const risk=computeRisk(dataRisk, startingEquity, false);
 
   document.getElementById('hdrSubText').textContent = `${fr} → ${to} · ${data.length} ${agg} periods · ${(risk.totalTrades||0).toLocaleString()} trades · `;
 
@@ -966,7 +968,7 @@ function render() {
     const riskStartingEquity = CAPITAL + riskPnlBase;
 
     // Recompute risk metrics on the sliced data
-    const risk = computeRisk(riskData, riskStartingEquity, agg!=='daily');
+    const risk = computeRisk(riskData, riskStartingEquity, false);
 
     const totalPnl=riskData.reduce((a,r)=>a+r.pnl,0);
     const riskOn = r => {
@@ -1063,12 +1065,9 @@ function render() {
       const so=enough&&ds?+(mn*TRADING_DAYS/ds).toFixed(2):undefined;
       const wr=v.trades?+(v.wins/v.trades*100).toFixed(1):0;
       const pf=v.gl?+(v.gp/v.gl).toFixed(2):0;
-      // intra-month max drawdown from cum_pnl series; under weekly/monthly
-      // aggregation the period-end cums hide intra-period dips, so fall back
-      // to the rows' intra-period daily drawdowns (set by aggregate()).
+      // Intra-month max drawdown from the daily-basis cumulative PnL series.
       let pk=-Infinity, mdd=0;
       v.cumPnls.forEach(c=>{ pk=Math.max(pk,c); mdd=Math.min(mdd,c-pk); });
-      if(agg!=='daily') mdd=Math.min(mdd, v.minDD);
       const tr=tbody.insertRow(-1);
       const cls=v.pnl>=0?'g':'r';
       tr.innerHTML=`<td>${m}</td><td class="${cls}">${fmt$(v.pnl)}</td><td class="${sh==null?'':sh>=0?'g':'r'}">${fmt2(sh)}</td><td class="${so==null?'':so>=0?'g':'r'}">${fmt2(so)}</td><td class="r">${fmt$(mdd)}</td><td>${v.trades}</td>`;
