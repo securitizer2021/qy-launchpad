@@ -1,4 +1,4 @@
-<!-- v1.0.36 | 2026-08-14 -->
+<!-- v1.1.0 | 2026-08-27 | automatic cache refresh -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -257,7 +257,7 @@ let RAW_DAILY = FALLBACK_RAW_DAILY;
 let DIST_RAW = FALLBACK_DIST_RAW;
 let MIN_DATE = RAW_DAILY[0].date, MAX_DATE = RAW_DAILY[RAW_DAILY.length-1].date;
 const GRID = 'rgba(255,255,255,0.04)';
-const VERSION = 'v1.0.41';
+const VERSION = 'v1.1.0';
 const TRADING_DAYS = 252;
 const CAPITAL = 50000; // strategy capital base ($50k per contract allocation)
 
@@ -672,7 +672,7 @@ function refreshDerived(opts) {
 }
 
 async function fetchFileList() {
-  const res = await fetch(FILES_ENDPOINT, { cache: 'no-store' });
+  const res = await fetch(`${FILES_ENDPOINT}?v=${encodeURIComponent(VERSION)}&t=${Date.now()}`, { cache: 'no-store' });
   if (!res.ok) throw new Error('file list request failed: ' + res.status);
   return await res.json();
 }
@@ -698,7 +698,7 @@ async function autoScan(opts) {
 
     const fileEntries = [];
     for (const m of matches) {
-      const res = await fetch(m.name, { cache: 'no-store' });
+      const res = await fetch(`${m.name}?v=${encodeURIComponent(VERSION)}&t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`fetch failed for ${m.name}: ${res.status}`);
       fileEntries.push({ date: m.date, text: await res.text() });
     }
@@ -731,18 +731,57 @@ async function autoScan(opts) {
 // so you don't have to manually refresh to see today's file land.
 const POLL_MS = 60000;
 let pollTimer = null;
+let versionCheckInFlight = false;
+
+// GitHub Pages and other static CDNs may cache index.html independently of
+// manifest.json. Fetch a uniquely-versioned copy of the deployed HTML, compare
+// its embedded VERSION, and move the browser to a versioned URL when a newer
+// build exists. This makes future releases self-updating without a hard refresh
+// or manually clearing the browser cache.
+async function checkForNewVersion() {
+  if (versionCheckInFlight || location.protocol === 'file:') return false;
+  versionCheckInFlight = true;
+  try {
+    const res = await fetch(`index.html?__version_check=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const html = await res.text();
+    const match = html.match(/const VERSION = ['"]([^'"]+)['"]/);
+    const deployedVersion = match && match[1];
+    if (deployedVersion && deployedVersion !== VERSION) {
+      const next = new URL('index.html', location.href);
+      next.searchParams.set('v', deployedVersion);
+      location.replace(next.href);
+      return true;
+    }
+  } catch (err) {
+    console.warn('Version check failed:', err);
+  } finally {
+    versionCheckInFlight = false;
+  }
+  return false;
+}
+
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') autoScan({ silent: true });
+    if (document.visibilityState === 'visible') {
+      checkForNewVersion();
+      autoScan({ silent: true });
+    }
   }, POLL_MS);
 }
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') autoScan({ silent: true });
+  if (document.visibilityState === 'visible') {
+    checkForNewVersion();
+    autoScan({ silent: true });
+  }
 });
+
+// Check immediately as well as on the normal 60-second poll.
+checkForNewVersion();
 
 function fmt$(v){ return '$'+v.toLocaleString(undefined,{maximumFractionDigits:0}); }
 function fmt$u(v){ return v==null||isNaN(v)?'—':fmt$(v); } // em-dash for undefined metrics
