@@ -187,14 +187,14 @@ tr:hover td{background:#191f2e}
   <!-- ── OVERVIEW PAGE ── -->
   <div class="page active" id="page-overview">
     <div class="kpi-grid" id="overviewKpis"></div>
-    <div style="font-size:10px;color:#4a5568;line-height:1.5">Data basis: PnL and cumulative return are all-sessions. Risk ratios, volatility and trade statistics exclude the three migration-affected sessions (Jul 15, 21, 23, 2026), pending reconciliation — per July 2026 investor letter, note&nbsp;3.</div>
+    <div style="font-size:10px;color:#4a5568;line-height:1.5">Data basis: PnL, cumulative return and drawdown include all sessions. Risk ratios, volatility and trade statistics exclude the three migration-affected sessions (Jul 15, 21, 23, 2026), pending reconciliation — per July 2026 investor letter, note&nbsp;3.</div>
     <div id="overviewCharts"></div>
   </div>
 
   <!-- ── RISK PAGE ── -->
   <div class="page" id="page-risk">
     <div class="risk-grid" id="riskTiles"></div>
-    <div style="font-size:10px;color:#4a5568;line-height:1.5">Dashboard basis: risk metrics and trade statistics exclude the three migration-affected sessions (Jul 15, 21, 23, 2026), which remain included in PnL and cumulative return, pending reconciliation — per July 2026 investor letter, note&nbsp;3.</div>
+    <div style="font-size:10px;color:#4a5568;line-height:1.5">Dashboard basis: risk ratios, volatility and trade statistics exclude the three migration-affected sessions (Jul 15, 21, 23, 2026), which remain included in PnL, cumulative return and drawdown, pending reconciliation — per July 2026 investor letter, note&nbsp;3.</div>
     <div class="section">
       <h3>Rolling 10-Day Sharpe &amp; Sortino</h3>
       <div class="chart-wrap"><canvas id="rollingSharpeChart"></canvas></div>
@@ -282,20 +282,20 @@ let RAW_DAILY = FALLBACK_RAW_DAILY;
 let DIST_RAW = FALLBACK_DIST_RAW;
 let MIN_DATE = RAW_DAILY[0].date, MAX_DATE = RAW_DAILY[RAW_DAILY.length-1].date;
 const GRID = 'rgba(255,255,255,0.04)';
-const VERSION = 'v1.1.20';
+const VERSION = 'v1.1.21';
 const TRADING_DAYS = 252;
 const CAPITAL = 50000; // strategy capital base ($50k per contract allocation)
 
 // ── DATA BASIS ──
 // Sessions affected by the mid-July 2026 system migration. They ARE included
-// in PnL and cumulative return (the "all-sessions" basis), but are EXCLUDED
-// from risk metrics and trade statistics (the "dashboard basis"), pending
+// in PnL, cumulative return and drawdown, but are EXCLUDED
+// from other risk metrics and trade statistics (the "dashboard basis"), pending
 // reconciliation against clearing records. This mirrors note 3 of the July
 // 2026 investor letter, which reports both bases.
 const MIGRATION_EXCLUDED = new Set(['2026-07-15','2026-07-21','2026-07-23']);
 // Rebuild a daily series without the excluded sessions, recomputing the
-// cumulative path from the included days only, so drawdown/Calmar etc. are
-// computed purely on the risk-basis series (matches the investor letter).
+// cumulative path for the existing risk ratios (matches the investor letter).
+// Displayed drawdown metrics always use the separate all-sessions chart series.
 function riskBasis(dailyRows){
   const rows = dailyRows.filter(r=>!MIGRATION_EXCLUDED.has(r.date)).map(r=>Object.assign({},r));
   let cum=0, cumRet=0;
@@ -455,6 +455,13 @@ function drawdownSeries(data, startingEquity = CAPITAL) {
       max_drawdown_to_date: round(mdd, 2),
       max_drawdown_pct_to_date: peak > 0 ? round(mddPct, 2) : null};
   });
+}
+
+// Consume the exact chart observations, including every selected session.
+function maxDrawdown(data) {
+  const percentages = data.map(r => r.drawdown_pct).filter(v => v != null);
+  return {amount: Math.min(0, ...data.map(r => r.drawdown ?? 0)),
+    pct: percentages.length ? Math.min(...percentages) : null};
 }
 
 function aggregate(data, agg, startingEquity) {
@@ -858,11 +865,13 @@ function render() {
   const pnlBase = filtered.length ? (filtered[0].cum_pnl - filtered[0].pnl) : 0;
   const startingEquity = CAPITAL + pnlBase;
   const data=aggregate(filtered, agg, startingEquity);
+  const fullDaily=aggregate(filtered, 'daily', startingEquity);
+  const drawdown=maxDrawdown(data);
   const labels=data.map(r=>r.date);
   const ddLabel = agg === 'daily' ? 'Current drawdown' : `Worst daily drawdown in ${agg === 'weekly' ? 'week' : 'month'}`;
   document.querySelector('[data-m="drawdown"] span').textContent = ddLabel;
   document.querySelector('[data-m="drawdown_pct"] span').textContent = ddLabel + ' %';
-  document.getElementById('drawdownNote').textContent = `${ddLabel}: measured from the running equity peak within the selected range, including opening equity. Daily closing realised PnL, all sessions; DD % = (equity / peak equity − 1) × 100. Current drawdown can recover; cumulative maximum drawdown cannot. Weekly/monthly points show the worst daily observation in that bucket, not maximum drawdown-to-date. Risk cards and the monthly risk table use the existing adjusted basis, excluding July 15, 21 and 23, 2026.`;
+  document.getElementById('drawdownNote').textContent = `${ddLabel}: measured from the running equity peak within the selected range, including opening equity. Daily closing realised PnL, all sessions; DD % = (equity / peak equity − 1) × 100. Current drawdown can recover; cumulative maximum drawdown cannot. Weekly/monthly points show the worst daily observation in that bucket, not maximum drawdown-to-date. Max Drawdown equals the lowest Current Drawdown % in the selected range; all sessions are included.`;
   // Risk & trade statistics always use DAILY observations on the dashboard
   // basis (migration sessions excluded). Chart/table aggregation is only a
   // presentation choice; it must not collapse a month into one observation
@@ -884,7 +893,7 @@ function render() {
       ['Ann. Volatility', fmt$u(risk.annVol), 'Daily returns', 'o'],
       ['Sharpe Ratio', fmt2(risk.sharpe), '(>1 good, >2 excellent)'+ratingBadge(risk.sharpe,[2,1,0],['Excellent','Good','Below avg'],['bg-g','bg-b','bg-o']), risk.sharpe==null?'':risk.sharpe>=2?'g':risk.sharpe>=1?'b':'r'],
       ['Sortino Ratio', fmt2(risk.sortino), 'Downside-adjusted'+ratingBadge(risk.sortino,[3,1.5,0],['Excellent','Good','Below avg'],['bg-g','bg-b','bg-o']), risk.sortino==null?'':risk.sortino>=3?'g':risk.sortino>=1.5?'b':'r'],
-      ['Range max DD (adjusted)', fmt2(risk.maxDD_pct)+'%', 'Worst daily % below peak equity', 'r'],
+      ['Max Drawdown', fmt2(drawdown.pct)+'%', 'Lowest current DD % in selected range', 'r'],
     ].map(([l,v,s,c])=>`<div class="kpi"><div class="kl">${l}</div><div class="kv ${c}">${v}</div><div class="ks">${s}</div></div>`).join('');
 
     const ovChartType = document.querySelector('.ct.on')?.dataset.c || 'bar';
@@ -1036,7 +1045,7 @@ function render() {
       ['sortino',    'Sortino Ratio',    fmt2(risk.sortino),   'Downside deviation',   ratingBadge(risk.sortino,[3,1.5,0],['Excellent','Good','Avg'],['bg-g','bg-b','bg-o']), risk.sortino==null?'':risk.sortino>=3?'g':'b'],
       ['calmar',     'Calmar Ratio',     fmt2(risk.calmar),    'Ann. Return / Max DD', ratingBadge(risk.calmar,[3,1,0],['Excellent','Good','Avg'],['bg-g','bg-b','bg-o']), risk.calmar==null?'':risk.calmar>=3?'g':'b'],
       ['omega',      'Omega Ratio',      fmt2(risk.omega),     '(>1 = profitable)',    ratingBadge(risk.omega,[2,1,0],['Strong','Positive','Negative'],['bg-g','bg-b','bg-r']), risk.omega==null?'':risk.omega>=2?'g':'b'],
-      ['max_dd',     'Window max DD (adjusted)', fmt2(risk.maxDD_pct)+'%', 'Worst daily % below peak equity', '', 'r'],
+      ['max_dd',     'Max Drawdown', fmt2(drawdown.pct)+'%', 'Lowest current DD % in selected range', '', 'r'],
       ['var_95',     'VaR (95%)',        fmt$u(risk.var95),  'Daily, 1-tail 5%',     '', 'o'],
       ['cvar_95',    'CVaR (95%)',       fmt$u(risk.cvar95), 'Expected tail loss',   '', 'r'],
       ['var_99',     'VaR (99%)',        fmt$u(risk.var99),  'Daily, 1-tail 1%',     '', 'o'],
@@ -1045,7 +1054,7 @@ function render() {
     ];
     document.getElementById('riskTiles').innerHTML = ALL_RISK_TILES
       .filter(([key]) => riskOn(key))
-      .map(([,l,v,s,badge,c])=>`<div class="rtile"><div class="rl">${l}${rollLabel?`<span style="font-size:9px;color:#4a5568;margin-left:4px">${rollLabel}</span>`:''}</div><div class="rv ${c}">${v}${badge||''}</div><div class="rs">${s}</div></div>`)
+      .map(([key,l,v,s,badge,c])=>`<div class="rtile"><div class="rl">${l}${rollLabel && key !== 'max_dd'?`<span style="font-size:9px;color:#4a5568;margin-left:4px">${rollLabel}</span>`:''}</div><div class="rv ${c}">${v}${badge||''}</div><div class="rs">${s}</div></div>`)
       .join('');
 
     // Rolling Sharpe & Sortino within the filtered date range.
@@ -1121,9 +1130,8 @@ function render() {
       const so=enough&&ds?+(mn*TRADING_DAYS/ds).toFixed(2):undefined;
       const wr=v.trades?+(v.wins/v.trades*100).toFixed(1):0;
       const pf=v.gl?+(v.gp/v.gl).toFixed(2):0;
-      // Intra-month max drawdown from the daily-basis cumulative PnL series.
-      let pk=v.cumPnls[0]-v.returns[0], mdd=0;
-      v.cumPnls.forEach(c=>{ pk=Math.max(pk,c); mdd=Math.min(mdd,c-pk); });
+      // Same full-range daily drawdown path as the chart, grouped by month.
+      const mdd=maxDrawdown(fullDaily.filter(r=>r.date.slice(0,7)===m)).amount;
       const tr=tbody.insertRow(-1);
       const cls=v.pnl>=0?'g':'r';
       tr.innerHTML=`<td>${m}</td><td class="${cls}">${fmt$(v.pnl)}</td><td class="${sh==null?'':sh>=0?'g':'r'}">${fmt2(sh)}</td><td class="${so==null?'':so>=0?'g':'r'}">${fmt2(so)}</td><td class="r">${fmt$(mdd)}</td><td>${v.trades}</td>`;
@@ -1277,8 +1285,8 @@ const GLOSSARY = [
     thresholds:[{label:'< 1 Losing',c:'bg-r'},{label:'1–2 Positive',c:'bg-b'},{label:'> 2 Strong',c:'bg-g'}]
   },
   {
-    name:'Max Drawdown', badge:'Worst Streak', badgeColor:'bg-r', formula:'Max(Peak − Trough)',
-    body:`The worst daily closing decline from the running equity peak within the selected measurement window, including opening equity. Percentage drawdown divides by the peak equity at each observation. The risk cards use the adjusted series excluding July 15, 21 and 23, 2026; the charts include all sessions. Current drawdown may recover, while maximum drawdown-to-date is the running minimum and cannot recover. This is the <b>worst peak-to-trough decline</b> experienced — the number investors use to stress-test "what's the worst that happened?" A smaller max drawdown relative to total PnL means the strategy recovers quickly and doesn't blow up.`,
+    name:'Max Drawdown', badge:'Worst Streak', badgeColor:'bg-r', formula:'Min((Equity / Running Peak − 1) × 100)',
+    body:`The worst daily closing decline from the running equity peak within the selected measurement window, including opening equity. Percentage drawdown divides by the peak equity at each observation. Max Drawdown equals the minimum Current Drawdown % plotted for the selected date range. Both include every session, including July 15, 21 and 23, 2026. Current drawdown may recover, while maximum drawdown-to-date is the running minimum and cannot recover. This is the <b>worst peak-to-trough decline</b> experienced — the number investors use to stress-test "what's the worst that happened?" A smaller max drawdown relative to total PnL means the strategy recovers quickly and doesn't blow up.`,
     thresholds:[]
   },
   {
