@@ -773,7 +773,7 @@ async function autoScan(opts) {
     RAW_DAILY = rows;
     DIST_RAW = distRaw;
     refreshDerived({ resetRange: !everLoaded });
-    const stamp = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const stamp = new Intl.DateTimeFormat('en-US', {timeZone:'America/Los_Angeles', hour:'2-digit', minute:'2-digit', timeZoneName:'short'}).format(new Date());
     const badge = (everLoaded && changed) ? ' (new data)' : '';
     setDataStatus(`🟢 Live · ${matches.length} files scanned · ${stamp}${badge}`, '#68d391');
     if (!everLoaded || changed) render();
